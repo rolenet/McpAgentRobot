@@ -1,10 +1,11 @@
 """
-MCP智能体平台配置文件
+MCP智能体平台配置文件 
 """
 # 日志配置
 LOG_LEVEL = "INFO"
 # Ollama模型配置
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+
 
 # 不同类型任务的模型配置
 MODEL_CONFIG = {
