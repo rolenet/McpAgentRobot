@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>智能体交互界面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a2e;
+            color: #fff;
+            display: flex;
+            min-height: 100vh;
+        }
+        .robot-face {
+            width: 50%;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #162447;
+        }
+        .robot-head {
+            width: 300px;
+            height: 400px;
+            background: #1f4068;
+            border-radius: 150px 150px 100px 100px;
+            position: relative;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        }
+        .eyes {
+            display: flex;
+            justify-content: space-around;
+            padding: 80px 20px;
+        }
+        .eye {
+            width: 80px;
+            height: 80px;
+            background: #e94560;
+            border-radius: 50%;
+            position: relative;
+            animation: blink 4s infinite;
+        }
+        .eye::after {
+            content: '';
+            position: absolute;
+            width: 35px;
+            height: 35px;
+            background: #fff;
+            border-radius: 50%;
+            top: 20px;
+            left: 20px;
+            animation: look 5s infinite;
+        }
+        .mouth {
+            width: 150px;
+            height: 50px;
+            background: #e94560;
+            border-radius: 0 0 50px 50px;
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            overflow: hidden;
+            animation: talk 1s infinite;
+        }
+        .mouth.speaking {
+            animation: talk 0.3s infinite;
+        }
+        @keyframes blink {
+            0%, 45%, 50%, 55%, 100% {transform: scaleY(1);}
+            48%, 52% {transform: scaleY(0.1);}
+        }
+        @keyframes look {
+            0%, 100% {transform: translate(0, 0);}
+            25% {transform: translate(10px, 10px);}
+            50% {transform: translate(-10px, -10px);}
+            75% {transform: translate(-10px, 10px);}
+        }
+        @keyframes talk {
+            0%, 100% {height: 50px;}
+            50% {height: 30px;}
+        }
+        .sidebar {
+            width: 50%;
+            padding: 20px;
+            background: #162447;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .vision-panel {
+            flex: 1;
+            background: #1f4068;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        #vision-feed {
+            width: 100%;
+            height: 300px;
+            background: #000;
+            border-radius: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        #vision-feed img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .chat-panel {
+            flex: 1;
+            background: #1f4068;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .chat-box {
+            flex: 1;
+            padding: 10px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+            margin-bottom: 10px;
+            overflow-y: auto;
+            color: #fff;
+        }
+        .chat-box::-webkit-scrollbar {
+            width: 5px;
+        }
+        .chat-box::-webkit-scrollbar-thumb {
+            background: #e94560;
+            border-radius: 5px;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+        #message-input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+        #message-input::placeholder {
+            color: rgba(255,255,255,0.5);
+        }
+        button {
+            padding: 10px 20px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #d63651;
+        }
+    </style>
+</head>
+<body>
+    <div class="robot-face">
+        <div class="robot-head">
+            <div class="eyes">
+                <div class="eye"></div>
+                <div class="eye"></div>
+            </div>
+            <div class="mouth"></div>
+        </div>
+    </div>
+    <div class="sidebar">
+        <div class="vision-panel">
+            <div class="sensor-title">👁️ 视觉</div>
+            <div id="vision-feed"></div>
+        </div>
+        <div class="chat-panel">
+            <div class="chat-box" id="chat-history"></div>
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="输入消息...">
+                <button onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+        let heartbeatInterval = null;
+        
+        const chatHistory = document.getElementById('chat-history');
+        const visionFeed = document.getElementById('vision-feed');
+        const mouth = document.querySelector('.mouth');
+        
+        // 控制机器人说话动画
+        function startTalking() {
+            mouth.classList.add('speaking');
+        }
+        
+        function stopTalking() {
+            mouth.classList.remove('speaking');
+        }
+        
+        // 在收到消息时触发说话动画
+        function handleRobotSpeech(text) {
+            startTalking();
+            // 根据文本长度设置说话动画持续时间
+            const duration = Math.min(text.length * 100, 3000);
+            setTimeout(stopTalking, duration);
+        }
+
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                console.log('WebSocket已经连接');
+                return;
+            }
+            
+            // 使用当前页面的主机和端口
+            ws = new WebSocket(`ws://${window.location.host}/ws`);
+            
+            ws.onopen = function() {
+                console.log('WebSocket已连接');
+                reconnectAttempts = 0;
+                
+                // 设置心跳检测
+                heartbeatInterval = setInterval(function() {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({type: "heartbeat"}));
+                    }
+                }, 30000); // 每30秒发送一次心跳
+            };
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('收到消息:', data);
+                
+                switch(data.type) {
+                    case 'vision':
+                        if (data.content) {
+                            const img = new Image();
+                            img.src = `data:image/jpeg;base64,${data.content}`;
+                            img.onerror = function() {
+                                console.error('图像加载失败');
+                            };
+                            img.onload = function() {
+                                visionFeed.innerHTML = '';
+                                visionFeed.appendChild(img);
+                            };
+                        }
+                        break;
+                    case 'chat':
+                        const messageDiv = document.createElement('div');
+                        messageDiv.textContent = `${data.sender_id}: ${data.content.text}`;
+                        chatHistory.appendChild(messageDiv);
+                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                        
+                        // 如果是机器人的回复，触发说话动画
+                        if (data.sender_id === 'brain') {
+                            handleRobotSpeech(data.content.text);
+                        }
+                        break;
+                    case 'audio':
+                        // 处理音频消息
+                        if (data.content && data.content.audio_data) {
+                            const audio = new Audio(`data:audio/wav;base64,${data.content.audio_data}`);
+                            audio.play().catch(e => console.error('音频播放失败:', e));
+                        }
+                        break;
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket错误:', error);
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket连接关闭');
+                clearInterval(heartbeatInterval);
+                
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    console.log(`正在重新连接... 尝试 ${reconnectAttempts}`);
+                    setTimeout(connectWebSocket, 2000);
+                }
+            };
+        }
+        // Initial connection
+        connectWebSocket();
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (message && ws.readyState === WebSocket.OPEN) {
+                console.log('Sending message:', message);
+                ws.send(JSON.stringify({
+                    type: 'text',
+                    sender_id: 'user',
+                    receiver_id: 'brain',
+                    content: {
+                        text: message
+                    }
+                }));
+                
+                // 在聊天框中显示发送的消息
+                const messageDiv = document.createElement('div');
+                messageDiv.textContent = `User: ${message}`;
+                chatHistory.appendChild(messageDiv);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+                
+                input.value = '';
+            }
+        }
+
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
